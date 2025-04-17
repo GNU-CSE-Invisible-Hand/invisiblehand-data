@@ -184,11 +184,10 @@ class ApiWrapper:
 
         news_list = {i: [] for i in ApiWrapper.NASDAQ_TICKERS.keys()}
 
-        print("Fetching news data...")
         for ticker in tqdm(ApiWrapper.NASDAQ_TICKERS.keys(), desc="Fetching news data"):
             queries = urllib.parse.urlencode({
-                "query": ApiWrapper.NASDAQ_TICKERS[ticker],
-                "display": 20,
+                "query": ApiWrapper.NASDAQ_TICKERS[ticker] + " 주가",
+                "display": 50,
                 "start": 1,
                 "sort": "date"
             })
@@ -204,7 +203,7 @@ class ApiWrapper:
                 raise RuntimeError("news data fetch error.")
             result = response.json()
 
-            for i in range(10):
+            for i in range(min(10, len(result["items"]))):
                 title = self.sanitize(result["items"][i]["title"])
                 url = result["items"][i]["link"]
                 pubDate_str = result["items"][i]["pubDate"]
@@ -212,7 +211,7 @@ class ApiWrapper:
                 description = self.sanitize(result["items"][i]["description"])
 
                 data = {
-                    "ticker": "",  # You can set a default ticker or make it optional
+                    "ticker": ticker,  # You can set a default ticker or make it optional
                     "title": title,
                     "link": url,
                     "description": description,
@@ -426,10 +425,27 @@ class ApiWrapper:
                 if result.status_code != 200:
                     raise RuntimeError("news data upload error!")
 
+    def upload_summary(self, text: str, ticker: str):
+        data = {
+            "ticker": ticker,
+            "summaryText": text,
+            "uploadDate": datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+        }
+
+        result = requests.post(
+            "http://10.7.0.2:8080/upload/summary",
+            json=data,
+            headers={"Authorization": self.__token}
+        )
+
+        if result.status_code != 200:
+            raise RuntimeError("news data upload error!")
+
 
 if __name__ == "__main__":
     api = ApiWrapper()
-    api.upload_stock_data()
-    # api.upload_youtube_links()
+    # api.upload_stock_data()
+    api.upload_youtube_links()
+    api.upload_summary(text="테스트", ticker="AAPL") # NOT TESTED !!!
     # api.upload_news()
     # api.upload_exchange_rate()
