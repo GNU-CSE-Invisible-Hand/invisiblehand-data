@@ -185,7 +185,7 @@ class ApiWrapper:
         news_list = {i: [] for i in ApiWrapper.NASDAQ_TICKERS.keys()}
 
         print("Fetching news data...")
-        for ticker in tqdm(ApiWrapper.NASDAQ_TICKERS.keys()):
+        for ticker in tqdm(ApiWrapper.NASDAQ_TICKERS.keys(), desc="Fetching news data"):
             queries = urllib.parse.urlencode({
                 "query": ApiWrapper.NASDAQ_TICKERS[ticker],
                 "display": 20,
@@ -233,21 +233,25 @@ class ApiWrapper:
             dict: A dictionary containing stock data for all NASDAQ tickers.
         """
 
-        print("Fetching stock data...", end="")
         result = {}
-        for ticker in tqdm(ApiWrapper.NASDAQ_TICKERS.keys()):
+        for ticker in tqdm(ApiWrapper.NASDAQ_TICKERS.keys(), desc="Fetching Stock Data"):
             df: pd.DataFrame = fdr.DataReader(
                 ticker,
                 (datetime.now() - timedelta(days))
                     .strftime("%Y%m%d"), datetime.now().strftime("%Y%m%d")
             )
-            high52week, low52week = max(df.Close), min(df.Close)
-            currentPrice = df.Close.iloc[-1]
+            high52week, low52week = float(max(df.Close)), float(min(df.Close))
+            currentPrice = float(df.Close.iloc[-1])
 
             stock_data = {
-                datetime.fromtimestamp(int(ts) / 1000).strftime('%Y-%m-%d'): val
+                datetime.fromtimestamp(int(ts) / 1000).strftime('%Y-%m-%d'): {i.lower(): float(val[i])for i in val.keys()}
                 for ts, val in json.loads(df.T.to_json()).items()
             }
+
+            for date_key in stock_data:
+                if 'adj close' in stock_data[date_key]:
+                    stock_data[date_key]['adjClose'] = stock_data[date_key].pop('adj close')
+
 
             data = {
                 "ticker": ticker,
@@ -260,7 +264,7 @@ class ApiWrapper:
             }
 
             result[ticker] = data
-            sleep(0.2)
+            sleep(0.1)
         
         return result
 
@@ -272,7 +276,7 @@ class ApiWrapper:
         '''
 
         stocks = self.get_stock_data()
-        for ticker in stocks.keys():
+        for ticker in tqdm(stocks.keys(), desc="Uploading stock data"):
             data = {
                 "Authentication": self.__token,
                 "ticker": ticker,
@@ -303,6 +307,8 @@ class ApiWrapper:
             "data": "AP01"
         })
 
+        print("uploading exchange rate...", end="")
+
         while True:
             response = None
             try:
@@ -329,6 +335,8 @@ class ApiWrapper:
 
         if result.status_code != 200:
             raise RuntimeError("exchange rate data upload error!")
+        
+        print("done")
 
 
     def upload_youtube_links(self):
@@ -336,7 +344,7 @@ class ApiWrapper:
             Uploads YouTube links based on the query.
         """
 
-        for ticker in tqdm(ApiWrapper.NASDAQ_TICKERS.keys()):
+        for ticker in tqdm(ApiWrapper.NASDAQ_TICKERS.keys(), desc="Uploading YouTube Links"):
             query = ApiWrapper.NASDAQ_TICKERS[ticker]
             url = ApiWrapper.YOUTUBE_API_URL \
                     + "?q=" \
@@ -398,7 +406,7 @@ class ApiWrapper:
         """
 
         news_list = self.get_news_data()
-        for ticker in news_list.keys():
+        for ticker in tqdm(news_list.keys(), desc="Uploading News Data"):
             ticker_news = news_list[ticker]
 
             for i in range(5):
@@ -421,7 +429,7 @@ class ApiWrapper:
 
 if __name__ == "__main__":
     api = ApiWrapper()
-    # api.upload_stock_data()
+    api.upload_stock_data()
     # api.upload_youtube_links()
     # api.upload_news()
     # api.upload_exchange_rate()
