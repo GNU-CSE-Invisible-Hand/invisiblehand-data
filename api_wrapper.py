@@ -439,13 +439,15 @@ class ApiWrapper:
         )
 
         if result.status_code != 200:
-            raise RuntimeError("news data upload error!")
+            raise RuntimeError("summary data upload error!")
 
 
 if __name__ == "__main__":
+    summerized = ""
+    ticker = ""
     api = ApiWrapper()
     # api.upload_stock_data()
-    api.upload_youtube_links()
-    api.upload_summary(text="테스트", ticker="AAPL") # NOT TESTED !!!
+    # api.upload_youtube_links()
+    api.upload_summary(text=summerized, ticker=ticker)
     # api.upload_news()
     # api.upload_exchange_rate()
