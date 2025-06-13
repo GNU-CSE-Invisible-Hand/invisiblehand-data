@@ -1,4 +1,5 @@
 from time import sleep
+import urllib.parse
 import FinanceDataReader as fdr
 from datetime import datetime, timedelta
 import pandas as pd
@@ -11,6 +12,12 @@ import os
 
 from tqdm import tqdm
 
+from melo.api import TTS
+
+from index_calculate import calculate_buy_index
+
+import base64
+
 
 load_dotenv()
 class ApiWrapper:
@@ -20,9 +27,6 @@ class ApiWrapper:
     This class provides methods to interact with the INVHAND API, including authentication and data retrieval.
     """
 
-    NAVER_NEWS_API_URL = "https://openapi.naver.com/v1/search/news.json"
-    EXCHANGE_API_URL = "https://www.koreaexim.go.kr/site/program/financial/exchangeJSON"
-    YOUTUBE_API_URL = "https://www.googleapis.com/youtube/v3/search"
     NASDAQ_TICKERS = {
         "AAPL": "애플",
         "ABNB": "에어비앤비",
@@ -127,6 +131,23 @@ class ApiWrapper:
         "ZS": "지스케일러",
     }
 
+    OTHER_TICKERS = {
+        'IXIC': "나스닥 종합지수",
+        'KS11': "KOSPI 지수",
+        'KQ11': "KOSDAQ 지수",
+        'KS200': "KOSPI 200",
+        'DJI': "다우존스 지수",
+        'S&P500': "S&P500 지수",
+        'RUT': "러셀2000 지수",
+        'VIX': "VIA지수",
+        'SSEC': "상해 종합지수",
+        'HSI': "항셍지수",
+        'N225': "일본 닛케이지수",
+        'FTSE': "영국 FTSE100",
+        'FCHI': "프랑스 FCHI 지수",
+        'GDAXI': "독일 닥스지수"
+    }
+
 
     def __init__(self):
         # Initialize the API wrapper with necessary configurations and credentials
@@ -139,6 +160,10 @@ class ApiWrapper:
         self.__youtube_api_key = os.getenv('YOUTUBE_API_KEY')
         self.__naver_news_client_id = os.getenv('NAVER_NEWS_CLIENT_ID')
         self.__naver_news_client_secret = os.getenv('NAVER_NEWS_CLIENT_SECRET')
+
+        self.__naver_news_api_url = os.getenv('NAVER_NEWS_API_URL')
+        self.__exchange_api_url = os.getenv('EXCHANGE_API_URL')
+        self.__youtube_api_url = os.getenv('YOUTUBE_API_URL')
 
         # Initialize the token for authentication
         self.__token = self._get_token()
@@ -197,7 +222,7 @@ class ApiWrapper:
                 "X-Naver-Client-Secret": self.__naver_news_client_secret,
             }
 
-            response = requests.get(ApiWrapper.NAVER_NEWS_API_URL + "?" + queries, headers=header)
+            response = requests.get(self.__naver_news_api_url + "?" + queries, headers=header)
 
             if response.status_code != 200:
                 raise RuntimeError("news data fetch error.")
@@ -233,7 +258,10 @@ class ApiWrapper:
         """
 
         result = {}
-        for ticker in tqdm(ApiWrapper.NASDAQ_TICKERS.keys(), desc="Fetching Stock Data"):
+
+        keys = list(ApiWrapper.NASDAQ_TICKERS.keys()) + list(ApiWrapper.OTHER_TICKERS.keys())
+
+        for ticker in tqdm(keys, desc="Fetching Stock Data"):
             df: pd.DataFrame = fdr.DataReader(
                 ticker,
                 (datetime.now() - timedelta(days))
@@ -242,8 +270,16 @@ class ApiWrapper:
             high52week, low52week = float(max(df.Close)), float(min(df.Close))
             currentPrice = float(df.Close.iloc[-1])
 
+            # stock_data = {
+            #     datetime.fromtimestamp(int(ts) / 1000).strftime('%Y-%m-%d'): {i.lower(): float(val[i]) for i in val.keys()}
+            #     for ts, val in json.loads(df.T.to_json()).items()
+
+            # }
             stock_data = {
-                datetime.fromtimestamp(int(ts) / 1000).strftime('%Y-%m-%d'): {i.lower(): float(val[i])for i in val.keys()}
+                datetime.fromtimestamp(int(ts) / 1000).strftime('%Y-%m-%d'): {
+                    i.lower(): float(val[i]) for i in val.keys()
+                    if val[i] is not None  # None 값 건너뜀
+                }
                 for ts, val in json.loads(df.T.to_json()).items()
             }
 
@@ -254,7 +290,7 @@ class ApiWrapper:
 
             data = {
                 "ticker": ticker,
-                "companyName": ApiWrapper.NASDAQ_TICKERS[ticker],
+                "companyName": ApiWrapper.NASDAQ_TICKERS[ticker] if ticker in ApiWrapper.NASDAQ_TICKERS.keys() else ApiWrapper.OTHER_TICKERS[ticker],
                 "currentPrice": currentPrice,
                 "previousClosePrice": currentPrice,
                 "high52week": high52week,
@@ -268,29 +304,41 @@ class ApiWrapper:
         return result
 
 
-    def upload_stock_data(self):
-        '''
-        This function uploads stock data for a given ticker symbol from the FRED API
-        and returns the data as a JSON object.
-        '''
-
+    def upload_stock_data(self) -> dict:
+        """
+        Uploads stock data to the API.
+        This method will be used to upload the stock data to the API.
+        This method will be called by the main application to upload the stock data.
+        """
+        
         stocks = self.get_stock_data()
         for ticker in tqdm(stocks.keys(), desc="Uploading stock data"):
+            
+            df = fdr.DataReader(ticker, start=(datetime.now() - timedelta(days=365)).strftime("%Y%m%d"))
+
+            buy_index = calculate_buy_index(df) or 0.5
+            change = df.loc[(datetime.now() - timedelta(2)).strftime("%Y-%m-%d")]["Close"] \
+                     - df.loc[(datetime.now() - timedelta(1)).strftime("%Y-%m-%d")]["Close"]
+
             data = {
-                "Authentication": self.__token,
+                "authentication": self.__token,
                 "ticker": ticker,
-                "companyName": ApiWrapper.NASDAQ_TICKERS[ticker],
+                "companyName": ApiWrapper.NASDAQ_TICKERS[ticker] if ticker in ApiWrapper.NASDAQ_TICKERS.keys() else ApiWrapper.OTHER_TICKERS[ticker],
                 "currentPrice": stocks[ticker]["currentPrice"],
                 "previousClosePrice": stocks[ticker]["currentPrice"],
                 "high52week": stocks[ticker]["high52week"],
                 "low52week": stocks[ticker]["low52week"],
+                "buyIndex": buy_index,
                 "prices": stocks[ticker]["prices"],
+                "changeRate": change
             }
 
             result = requests.post(f"{self.__base_url}raw", json=data)
 
             if result.status_code != 200:
                 raise RuntimeError("raw stock data upload error!")
+
+        return stocks
 
 
     def upload_exchange_rate(self):
@@ -311,7 +359,7 @@ class ApiWrapper:
         while True:
             response = None
             try:
-                response = requests.get(ApiWrapper.EXCHANGE_API_URL + f"?{queries}", verify=False)
+                response = requests.get(self.__exchange_api_url + f"?{queries}", verify=False)
                 break
             except:
                 continue
@@ -329,8 +377,9 @@ class ApiWrapper:
         data["date"] = datetime.now().strftime("%Y-%m-%d")
         data["dealBaseRate"] = float(result["deal_bas_r"].replace(",", ""))
         data["currency"] = "USD"
+        
 
-        result = requests.post(f"{self.__base_url}/exchange/save", json=data)
+        result = requests.post(f"{self.__base_url}/exchange/save", headers={"Authorization": "Bearer " + self.__token}, json=data)
 
         if result.status_code != 200:
             raise RuntimeError("exchange rate data upload error!")
@@ -345,7 +394,7 @@ class ApiWrapper:
 
         for ticker in tqdm(ApiWrapper.NASDAQ_TICKERS.keys(), desc="Uploading YouTube Links"):
             query = ApiWrapper.NASDAQ_TICKERS[ticker]
-            url = ApiWrapper.YOUTUBE_API_URL \
+            url = self.__youtube_api_url \
                     + "?q=" \
                     + query + "%20증시" \
                     + "&part=snippet&maxResults=15&key=" \
@@ -387,7 +436,7 @@ class ApiWrapper:
                 result = requests.post(
                     f"{self.__base_url}upload/youtube",
                     json=result,
-                    headers={"Authorization": self.__token}
+                    headers={"Authorization": "Bearer " + self.__token}
                 )
 
                 count += 1
@@ -419,7 +468,7 @@ class ApiWrapper:
                 result = requests.post(
                     f"{self.__base_url}upload/news",
                     json=data,
-                    headers={"Authorization": self.__token}
+                    headers={"Authorization": "Bearer " + self.__token}
                 )
 
                 if result.status_code != 200:
@@ -435,19 +484,92 @@ class ApiWrapper:
         result = requests.post(
             "http://10.7.0.2:8080/upload/summary",
             json=data,
-            headers={"Authorization": self.__token}
+            headers={"Authorization": "Bearer " + self.__token}
         )
 
         if result.status_code != 200:
             raise RuntimeError("summary data upload error!")
 
 
+    def upload_podcast(self, ticker: str):
+        # speed = 1.05
+        # device = 'cpu' # or cuda:0
+        # model = TTS(language='KR', device=device)
+        # speaker_ids = model.hps.data.spk2id
+
+        output_path = ticker + '.wav'
+        # model.tts_to_file(text, speaker_ids['KR'], output_path, speed=speed)
+
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        url = f"http://10.7.0.2:8080/tts/upload"
+        
+
+        result = None
+        with open(output_path, "rb") as f:
+            files = {
+                'file': (output_path, f, 'audio/wav')
+            }
+            params = {
+                'ticker': ticker,
+                'date': date_str
+            }
+            headers = {
+                "Authorization": "Bearer " + self.__token
+            }
+            result = requests.post(
+                url,
+                files=files,
+                params=params,
+                headers=headers
+            )
+        
+        return result
+
+
+    def upload_podcast_greeting(self):
+        speed = 1.05
+        device = 'cpu' # or cuda:0
+        model = TTS(language='KR', device=device)
+        speaker_ids = model.hps.data.spk2id
+
+        today = datetime.today()
+        date_str = f"{today.year}년 {today.month}월 {today.day}일"
+
+        text = f"안녕하십니까,\n {date_str} 기준 관심 종목 뉴스 요약 정보를 안내해 드리겠습니다.\n"
+
+        output_path = "greeting.wav"
+        model.tts_to_file(text, speaker_ids['KR'], output_path, speed=speed)
+
+        date_str = datetime.now().strftime("%Y-%m-%d")
+        url = f"http://10.7.0.2:8080/tts/greeting/upload"
+        
+
+        result = None
+        with open(output_path, "rb") as f:
+            files = {
+                'file': (output_path, f, 'audio/wav')
+            }
+            params = {
+                'date': date_str
+            }
+            headers = {
+                "Authorization": "Bearer " + self.__token
+            }
+            result = requests.post(
+                url,
+                files=files,
+                params=params,
+                headers=headers
+            )
+        
+        return result
+
+
 if __name__ == "__main__":
-    summerized = ""
-    ticker = ""
     api = ApiWrapper()
     # api.upload_stock_data()
     # api.upload_youtube_links()
-    api.upload_summary(text=summerized, ticker=ticker)
+    # api.upload_summary(text=summerized, ticker=ticker)
     # api.upload_news()
     # api.upload_exchange_rate()
+    # api.upload_podcast(summerized, ticker)
