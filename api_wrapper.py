@@ -686,7 +686,7 @@ class ApiWrapper:
 
         keys = dict()
         keys.update(ApiWrapper.NASDAQ_TICKERS)
-        keys.update({'IXIC': "나스닥 종합지수"})
+        # keys.update({'IXIC': "나스닥 종합지수"})
         for ticker in tqdm(keys.keys()):
             if ticker == "IXIC":
                 target = self.get_stock_news_data()[ticker]
@@ -758,7 +758,83 @@ class ApiWrapper:
                 print(res.text)
                 raise RuntimeError("news data upload error!")
 
+            # self.upload_podcast(text=result, ticker=ticker)
+
+
+    def get_podcast(self):
+        if self.news_list == None:
+            self.get_news_data()
+
+        keys = dict()
+        keys.update(ApiWrapper.NASDAQ_TICKERS)
+        keys.update({'IXIC': "나스닥 종합지수"})
+        for ticker in tqdm(keys.keys()):
+            if ticker == "IXIC":
+                target = self.get_stock_news_data()[ticker]
+            else:
+                target = self.news_list[ticker]
+            
+            name = ApiWrapper.NASDAQ_TICKERS[ticker] if ticker in ApiWrapper.NASDAQ_TICKERS.keys() else "나스닥 종합지수"
+
+            data = []
+            if ticker != "IXIC":
+                for i in target:
+                    data.append(i["title"].replace(":", "")  + " : " + i["description"].replace(":", ""))
+
+            if ticker == "IXIC":
+                for i in target:
+                    data.append(i["title"].replace(":", ""))
+
+            prompt = \
+            f"""
+            당신은 팟캐스트 작가이며, '{name}'종목에 대하여 3문단으로 구성된 에피소드 대본을 작성해야 합니다.
+
+            [요구 사항]
+            '{name}'에 대한 대본은 청취자가 이해하기 쉽게 서사적 흐름을 가지고 전개되어야 합니다.
+            각 문단은 하나의 이야기적 단위를 구성해야 하며, 도입 - 전개의 구조를 따라야 합니다.
+            정보의 정확성과 주제 관련성이 확보되어야 합니다.
+            본 대본은 한 명의 진행자가 선언하는 형식으로 작성합니다.
+            마무리 멘트는 생략해 주세요.
+
+
+            [제약 사항]
+            형식은 세 문단으로 나누되, 별도의 문단 제목이나 메타 정보, 마크다운 양식 없이 본문만 출력해 주세요.
+            문장 간 띄어쓰기를 정확히 하며, 각 문장은 마침표(.)를 포함한 완결된 문장으로 마무리해 주세요.
+            내용은 팟캐스트 청취자의 관심을 끌 수 있도록 흥미롭고 직관적으로 구성해 주세요.
+            별도의 제목이나 메타 정보, 부연 설명, markdown 양식은 생략해 주세요.
+
+            [참고 자료: {name}의 헤드라인]
+            {"\n".join(data)}
+            """
+
+            result = self.query_llm(prompt)
+            result = result.replace("요 ", "요. ")
+            result = result.replace("다 ", "다. ")
+
+            print(result)
+
+            text = result
+            speed = 0.95
+            device = 'cpu' # or cuda:0
+            if ticker == "IXIC":
+                today = datetime.today()
+                date_str = f"{today.year}년 {today.month}월 {today.day}일"
+                text = f"안녕하십니까,\n {date_str} 기준 관심 종목 뉴스 요약 정보를 안내해 드리겠습니다.\n" + text
+
+            text = text.replace("%", "퍼센트").replace("$", "달러").replace("&", "엔")
+            text = re.sub(r'[^\w\s]', '', text)
+            text = text.replace("스타벅스", "starbucks")
+            text = text.replace("시놉시스", "synopsis")
+            text = text.replace("다 ", "다. ")
+            text = text.replace("다.", "다.\n")
+            print(text)
+            model = TTS(language='KR', device=device)
+            speaker_ids = model.hps.data.spk2id
+
+            output_path = "./tts/" + ticker + '.wav'
+            model.tts_to_file(text, speaker_ids['KR'], output_path, speed=speed)
             self.upload_podcast(text=result, ticker=ticker)
+
 
 
 if __name__ == "__main__":
@@ -787,5 +863,9 @@ if __name__ == "__main__":
         pass
     try:
         api.get_summary()
+    except:
+        pass
+    try:
+        api.get_podcast()
     except:
         pass
