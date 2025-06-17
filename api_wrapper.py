@@ -214,7 +214,7 @@ class ApiWrapper:
             return self.news_list
 
         keys = ApiWrapper.NASDAQ_TICKERS
-        keys.update({'IXIC': "나스닥 종합지수"})
+        # keys.update({'IXIC': "나스닥 종합지수"})
 
         news_list = {i: [] for i in keys.keys()}
 
@@ -338,6 +338,7 @@ class ApiWrapper:
                     i.lower(): float(val[i]) for i in val.keys()
                     if val[i] is not None  # None 값 건너뜀
                 }
+                
                 for ts, val in json.loads(df.T.to_json()).items()
             }
 
@@ -613,6 +614,8 @@ class ApiWrapper:
 
         text = text.replace("%", "퍼센트").replace("$", "달러").replace("&", "엔")
         text = re.sub(r'[^\w\s]', '', text)
+        text = text.replace("스타벅스", "starbucks")
+        text = text.replace("시놉시스", "synopsis")
         # text = text.replace("니다.", "니다.\n")
         # text = text.replace("한다.", "한다.\n")
         # text = text.replace("있다.", "있다.\n")
@@ -654,46 +657,6 @@ class ApiWrapper:
         
         return result
 
-
-    # def upload_podcast_greeting(self):
-    #     speed = 1.05
-    #     device = 'cpu' # or cuda:0
-    #     model = TTS(language='KR', device=device)
-    #     speaker_ids = model.hps.data.spk2id
-
-    #     today = datetime.today()
-    #     date_str = f"{today.year}년 {today.month}월 {today.day}일"
-
-    #     text = f"안녕하십니까,\n {date_str} 기준 관심 종목 뉴스 요약 정보를 안내해 드리겠습니다.\n"
-
-    #     output_path = "./tts/" + "greeting.wav"
-    #     model.tts_to_file(text, speaker_ids['KR'], output_path, speed=speed)
-
-    #     date_str = datetime.now().strftime("%Y-%m-%d")
-    #     url = f"http://10.7.0.2:8080/tts/greeting/upload"
-        
-
-    #     result = None
-    #     with open(output_path, "rb") as f:
-    #         files = {
-    #             'file': (output_path, f, 'audio/wav')
-    #         }
-    #         params = {
-    #             'date': date_str
-    #         }
-    #         headers = {
-    #             "Authorization": "Bearer " + self.__token
-    #         }
-    #         result = requests.post(
-    #             url,
-    #             files=files,
-    #             params=params,
-    #             headers=headers
-    #         )
-        
-    #     return result
-
-
     def query_llm(self, text: str) -> str:
         # studio_url = os.getenv('GOOGLE_AI_STUDIO_URL') + os.getenv('GOOGLE_AI_STUDIO_API_KEY')
         studio_url = os.getenv('GOOGLE_AI_STUDIO_URL_GEMMA') + os.getenv('GOOGLE_AI_STUDIO_API_KEY')
@@ -725,12 +688,21 @@ class ApiWrapper:
         keys.update(ApiWrapper.NASDAQ_TICKERS)
         keys.update({'IXIC': "나스닥 종합지수"})
         for ticker in tqdm(keys.keys()):
-            target = self.news_list[ticker]
+            if ticker == "IXIC":
+                target = self.get_stock_news_data()[ticker]
+            else:
+                target = self.news_list[ticker]
+            
             name = ApiWrapper.NASDAQ_TICKERS[ticker] if ticker in ApiWrapper.NASDAQ_TICKERS.keys() else "나스닥 종합지수"
 
             data = []
-            for i in target:
-                data.append(i["title"].replace(":", "")  + " : " + i["description"].replace(":", ""))
+            if ticker != "IXIC":
+                for i in target:
+                    data.append(i["title"].replace(":", "")  + " : " + i["description"].replace(":", ""))
+
+            if ticker == "IXIC":
+                for i in target:
+                    data.append(i["title"].replace(":", ""))
 
             prompt = \
             f"""
@@ -792,10 +764,28 @@ class ApiWrapper:
 if __name__ == "__main__":
     api = ApiWrapper()
 
-    api.upload_stock_data()
-    news_list = api.get_news_data()
-    api.upload_news()
-    api.upload_exchange_rate()
-    api.upload_stock_news()
-    api.upload_youtube_links()
-    api.get_summary()
+    try:
+        api.upload_stock_data()
+    except:
+        pass
+    try:
+        news_list = api.get_news_data()
+        api.upload_news()
+    except:
+        pass
+    try:
+        api.upload_exchange_rate()
+    except:
+        pass
+    try:
+        api.upload_stock_news()
+    except:
+        pass
+    try:
+        api.upload_youtube_links()
+    except:
+        pass
+    try:
+        api.get_summary()
+    except:
+        pass

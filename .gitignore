@@ -2,3 +2,6 @@
 __pycache__
 .vscode
 api_test.ipynb
+swig-4.3.1/
+*.wav
+.zip
