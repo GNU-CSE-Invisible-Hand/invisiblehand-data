@@ -659,8 +659,11 @@ class ApiWrapper:
 
     def query_llm(self, text: str) -> str:
         # studio_url = os.getenv('GOOGLE_AI_STUDIO_URL') + os.getenv('GOOGLE_AI_STUDIO_API_KEY')
-        studio_url = os.getenv('GOOGLE_AI_STUDIO_URL_GEMMA') + os.getenv('GOOGLE_AI_STUDIO_API_KEY')
-        header = {"Content-Type": "application/json"}
+        studio_url = os.getenv('GOOGLE_AI_STUDIO_URL_GEMMA') # + os.getenv('GOOGLE_AI_STUDIO_API_KEY')
+        header = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": os.getenv('GOOGLE_AI_STUDIO_API_KEY')
+        }
         payload = {
             "contents": [
                 {
